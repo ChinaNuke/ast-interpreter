@@ -1,6 +1,8 @@
 //==--- tools/clang-check/ClangInterpreter.cpp - Clang Interpreter tool --------------===//
 //===----------------------------------------------------------------------===//
 
+// 可以参考 https://clang.llvm.org/docs/RAVFrontendAction.html 去理解这段代码
+
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/EvaluatedExprVisitor.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -69,8 +71,9 @@ public:
   }
 };
 
+/// Usage: ./ast-interpreter "$(cat ../tests/test00.c)"
 int main (int argc, char ** argv) {
    if (argc > 1) {
-       clang::tooling::runToolOnCode(std::unique_ptr<clang::FrontendAction>(new InterpreterClassAction), argv[1]);
+      clang::tooling::runToolOnCode(std::unique_ptr<clang::FrontendAction>(new InterpreterClassAction), argv[1]);
    }
 }

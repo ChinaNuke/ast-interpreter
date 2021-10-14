@@ -72,8 +72,9 @@ public:
 
    /// Initialize the Environment
    void init(TranslationUnitDecl * unit) {
-	   for (TranslationUnitDecl::decl_iterator i =unit->decls_begin(), e = unit->decls_end(); i != e; ++ i) {
+	   for (TranslationUnitDecl::decl_iterator i = unit->decls_begin(), e = unit->decls_end(); i != e; ++ i) {
 		   if (FunctionDecl * fdecl = dyn_cast<FunctionDecl>(*i) ) {
+			   // 似乎是从AST中获得这几个函数的定义？
 			   if (fdecl->getName().equals("FREE")) mFree = fdecl;
 			   else if (fdecl->getName().equals("MALLOC")) mMalloc = fdecl;
 			   else if (fdecl->getName().equals("GET")) mInput = fdecl;
@@ -81,41 +82,54 @@ public:
 			   else if (fdecl->getName().equals("main")) mEntry = fdecl;
 		   }
 	   }
-	   mStack.push_back(StackFrame());
+	   mStack.push_back(StackFrame()); // 可以看做是入口的栈帧？
    }
 
    FunctionDecl * getEntry() {
 	   return mEntry;
    }
 
+   int getExprValue(Expr *expr) {
+	   if (IntegerLiteral *literal = dyn_cast<IntegerLiteral>(expr)) {
+		   // 整数常量值
+		   return literal->getValue().getSExtValue(); // class APIntStorage
+	   } else {
+		   return mStack.back().getStmtVal(expr);
+	   }
+   }
+
    /// !TODO Support comparison operation
    void binop(BinaryOperator *bop) {
-	   Expr * left = bop->getLHS();
+	   Expr * left = bop->getLHS(); // Left Hand Side
 	   Expr * right = bop->getRHS();
 
 	   if (bop->isAssignmentOp()) {
-		   int val = mStack.back().getStmtVal(right);
-		   mStack.back().bindStmt(left, val);
+		   /// TODO: right 是数组元素的情况
+		   int val = getExprValue(right);
+		   mStack.back().bindStmt(left, val); // 右值赋给左值
 		   if (DeclRefExpr * declexpr = dyn_cast<DeclRefExpr>(left)) {
 			   Decl * decl = declexpr->getFoundDecl();
 			   mStack.back().bindDecl(decl, val);
 		   }
+	   } else if (bop->isComparisonOp()) {
+		   // 比较操作实现
+		   ;
 	   }
    }
 
    void decl(DeclStmt * declstmt) {
 	   for (DeclStmt::decl_iterator it = declstmt->decl_begin(), ie = declstmt->decl_end();
 			   it != ie; ++ it) {
-		   Decl * decl = *it;
+		   Decl * decl = *it; // 不需要用 dyn_cast 因为一定会成功
 		   if (VarDecl * vardecl = dyn_cast<VarDecl>(decl)) {
-			   mStack.back().bindDecl(vardecl, 0);
+			   mStack.back().bindDecl(vardecl, 0); // 新定义的变量初始化为 0
 		   }
 	   }
    }
    void declref(DeclRefExpr * declref) {
 	   mStack.back().setPC(declref);
 	   if (declref->getType()->isIntegerType()) {
-		   Decl* decl = declref->getFoundDecl();
+		   Decl* decl = declref->getFoundDecl(); // getFoundDecl干啥的
 
 		   int val = mStack.back().getDeclVal(decl);
 		   mStack.back().bindStmt(declref, val);
