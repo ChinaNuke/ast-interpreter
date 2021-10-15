@@ -20,9 +20,16 @@ public:
    : EvaluatedExprVisitor(context), mEnv(env) {}
    virtual ~InterpreterVisitor() {}
 
+   virtual void VisitIntegerLiteral (IntegerLiteral * literal) {
+      mEnv->literal(literal);
+   }
    virtual void VisitBinaryOperator (BinaryOperator * bop) {
 	   VisitStmt(bop);
 	   mEnv->binop(bop);
+   }
+   virtual void VisitUnaryOperator (UnaryOperator * uop) {
+      VisitStmt(uop);
+      mEnv->unaryop(uop);
    }
    virtual void VisitDeclRefExpr(DeclRefExpr * expr) {
 	   VisitStmt(expr);
@@ -37,7 +44,24 @@ public:
 	   mEnv->call(call);
    }
    virtual void VisitDeclStmt(DeclStmt * declstmt) {
+      VisitStmt(declstmt);
 	   mEnv->decl(declstmt);
+   }
+   virtual void VisitIfStmt(IfStmt * ifstmt) {
+      Expr * cond = ifstmt->getCond();
+
+      // 此处不能用 VisitStmt() 因为它只会取出参数的所有子节点进行遍历而忽略当前节点本身
+      // 比如对于一个 BinaryOperator，使用 VisitStmt() 会跳过 VisitBinaryOperator() 的执行
+      // 详见：clang/AST/EvaluatedExprVisitor.h: void VisitStmt(PTR(Stmt) S)
+      Visit(cond);
+
+      // 根据 cond 判断的结果只去 Visit 需要执行的子树
+      if (mEnv->getExprValue(cond)) {
+         VisitStmt(ifstmt->getThen());
+      } else {
+         // 应该可以自动应对没有 Else 分支的情况，未做测试
+         VisitStmt(ifstmt->getElse());
+      }
    }
 private:
    Environment * mEnv;
