@@ -48,19 +48,56 @@ public:
 	   mEnv->decl(declstmt);
    }
    virtual void VisitIfStmt(IfStmt * ifstmt) {
+      // clang/AST/Stmt.h: class IfStmt
+
       Expr * cond = ifstmt->getCond();
 
       // 此处不能用 VisitStmt() 因为它只会取出参数的所有子节点进行遍历而忽略当前节点本身
       // 比如对于一个 BinaryOperator，使用 VisitStmt() 会跳过 VisitBinaryOperator() 的执行
+      // 语句的 body 部分也可能是一个简单的 BinaryOperator，所以也必须用 Visit()
       // 详见：clang/AST/EvaluatedExprVisitor.h: void VisitStmt(PTR(Stmt) S)
       Visit(cond);
 
       // 根据 cond 判断的结果只去 Visit 需要执行的子树
       if (mEnv->getExprValue(cond)) {
-         VisitStmt(ifstmt->getThen());
+         Visit(ifstmt->getThen());
       } else {
-         // 应该可以自动应对没有 Else 分支的情况，未做测试
-         VisitStmt(ifstmt->getElse());
+         // 需要手动处理没有 Else 分支的情况
+         if (Stmt * elseStmt = ifstmt->getElse()) {
+            Visit(elseStmt);
+         }
+      }
+   }
+   virtual void VisitWhileStmt(WhileStmt * whilestmt) {
+      // clang/AST/Stmt.h: class WhileStmt
+
+      Expr * cond = whilestmt->getCond();
+      Stmt * body = whilestmt->getBody();
+
+      Visit(cond);
+
+      // 每次循环都要重新 evaluate 一下 condition 的值，以更新 StackFrame 中保存的结果
+      while (mEnv->getExprValue(cond)) {
+         Visit(body);
+         Visit(cond);
+      }
+   }
+   virtual void VisitForStmt(ForStmt * forstmt) {
+      // clang/AST/Stmt.h: class ForStmt
+
+      Stmt * init = forstmt->getInit();
+      Expr * cond = forstmt->getCond();
+      Expr * inc = forstmt->getInc();
+      Stmt * body = forstmt->getBody();
+
+      Visit(init);
+      Visit(cond);
+
+      // 每次循环都要重新 evaluate 一下 condition 的值，以更新 StackFrame 中保存的结果
+      while (mEnv->getExprValue(cond)) {
+         Visit(body);
+         Visit(inc);
+         Visit(cond);
       }
    }
 private:
