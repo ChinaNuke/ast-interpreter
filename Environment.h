@@ -14,6 +14,8 @@ using namespace clang;
 class StackFrame {
    /// StackFrame maps Variable Declaration to Value
    /// Which are either integer or addresses (also represented using an Integer value)
+
+   // 区别：Decl 是不能被 Visit 遍历的，而 Stmt 是可以被遍历的
    std::map<Decl*, int> mVars;
    std::map<Stmt*, int> mExprs;
    /// The current stmt
@@ -35,6 +37,9 @@ public:
    }
    void bindStmt(Stmt * stmt, int val) {
 	   mExprs[stmt] = val;
+   }
+   bool hasStmt(Stmt * stmt) {
+	   return (mExprs.find(stmt) != mExprs.end());
    }
    int getStmtVal(Stmt * stmt) {
 	   assert (mExprs.find(stmt) != mExprs.end());
@@ -72,11 +77,14 @@ class Environment {
    FunctionDecl * mMalloc;
    FunctionDecl * mInput;
    FunctionDecl * mOutput;
-
    FunctionDecl * mEntry;
+
+   std::map<Decl*, int> gVars; // 全局变量
+
 public:
    /// Get the declartions to the built-in functions
    Environment() : mStack(), mFree(NULL), mMalloc(NULL), mInput(NULL), mOutput(NULL), mEntry(NULL) {
+	   mStack.push_back(StackFrame()); // 初始栈帧，用于临时存储计算的全局变量值
    }
 
 
@@ -90,9 +98,18 @@ public:
 			   else if (fdecl->getName().equals("GET")) mInput = fdecl;
 			   else if (fdecl->getName().equals("PRINT")) mOutput = fdecl;
 			   else if (fdecl->getName().equals("main")) mEntry = fdecl;
+		   } else if (VarDecl *vdecl = dyn_cast<VarDecl>(*i)) {
+			   // 保存全局变量
+			   Stmt * initStmt = vdecl->getInit();
+			   if (mStack.back().hasStmt(initStmt)) {
+				   gVars[vdecl] = mStack.back().getStmtVal(initStmt);
+			   } else {
+				   gVars[vdecl] = 0; // 未初始化的全局变量默认为 0
+			   }
 		   }
 	   }
-	   mStack.push_back(StackFrame()); // 可以看做是入口的栈帧？
+	   mStack.pop_back(); // 清除初始的临时栈帧，后面不会再用到
+	   mStack.push_back(StackFrame()); // 入口函数 main 的栈帧
    }
 
    FunctionDecl * getEntry() {
@@ -211,8 +228,14 @@ public:
 	   mStack.back().setPC(declref);
 	   if (declref->getType()->isIntegerType()) {
 		   Decl* decl = declref->getFoundDecl();
-
-		   int val = mStack.back().getDeclVal(decl);
+		   int val;
+		   // 优先从当前栈帧中查找，找不到再查找全局变量
+		   if (mStack.back().hasDecl(decl)) {
+			   val = mStack.back().getDeclVal(decl);
+		   } else {
+			   assert (gVars.find(decl) != gVars.end());
+			   val = gVars[decl];
+		   }
 		   mStack.back().bindStmt(declref, val);
 	   }
    }
@@ -264,7 +287,6 @@ public:
 	   if (callee == mInput) {
 		  llvm::errs() << "Please Input an Integer Value : ";
 		  scanf("%d", &val);
-
 		  mStack.back().bindStmt(callexpr, val);
 		  return true;
 	   } else if (callee == mOutput) {

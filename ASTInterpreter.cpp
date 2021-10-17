@@ -137,6 +137,17 @@ public:
 
    virtual void HandleTranslationUnit(clang::ASTContext &Context) {
 	   TranslationUnitDecl * decl = Context.getTranslationUnitDecl();
+
+      /// 遍历全局变量声明以计算出它们的值，这些值保存在临时的初始栈帧中
+      /// TODO: 跟 mEnv->init() 函数里的循环有些重复，可以考虑优化一下
+      for (TranslationUnitDecl::decl_iterator i = decl->decls_begin(), e = decl->decls_end(); i != e; ++ i) {
+         if (VarDecl *vdecl = dyn_cast<VarDecl>(*i)) {
+            if (vdecl->hasInit()) {
+               mVisitor.Visit(vdecl->getInit());
+            }
+         }
+      }
+
 	   mEnv.init(decl);
 
 	   FunctionDecl * entry = mEnv.getEntry();
