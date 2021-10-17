@@ -18,6 +18,7 @@ class StackFrame {
    std::map<Stmt*, int> mExprs;
    /// The current stmt
    Stmt * mPC;
+   int returnValue; // 保存当前栈帧的返回值，只考虑整数
 public:
    StackFrame() : mVars(), mExprs(), mPC() {
    }
@@ -25,6 +26,9 @@ public:
    void bindDecl(Decl* decl, int val) {
       mVars[decl] = val;
    }    
+   bool hasDecl(Decl * decl) {
+	   return (mVars.find(decl) != mVars.end());
+   }
    int getDeclVal(Decl * decl) {
       assert (mVars.find(decl) != mVars.end());
       return mVars.find(decl)->second;
@@ -41,6 +45,12 @@ public:
    }
    Stmt * getPC() {
 	   return mPC;
+   }
+   void setReturnValue(int value) {
+	   returnValue = value;
+   }
+   int getReturnValue() {
+	   return returnValue;
    }
 };
 
@@ -216,9 +226,39 @@ public:
 	   }
    }
 
-   /// !TODO Support Function Call
-   void call(CallExpr * callexpr) {
-	   mStack.back().setPC(callexpr);
+   /// 将返回值保存到栈帧
+   void retstmt(Expr * retexpr) {
+	   mStack.back().setReturnValue(mStack.back().getStmtVal(retexpr));
+   }
+
+   /// 创建新栈帧以及进行参数绑定
+   void enterfunc(CallExpr * callexpr) {
+	   FunctionDecl *callee = callexpr->getDirectCallee();
+	   int paramCount = callee->getNumParams();
+	   assert(paramCount == callexpr->getNumArgs());
+
+	   StackFrame newFrame = StackFrame();
+	   
+	   for (int i = 0; i < paramCount; i++) {
+		   newFrame.bindDecl(
+			   callee->getParamDecl(i),
+			   mStack.back().getStmtVal(callexpr->getArg(i))
+		   );
+	   }
+
+	   mStack.push_back(newFrame);
+   }
+
+   /// 弹出栈帧以及进行返回值绑定
+   void exitfunc(CallExpr * callexpr) {
+	   int returnValue = mStack.back().getReturnValue();
+	   mStack.pop_back();
+	   mStack.back().bindStmt(callexpr, returnValue);
+   }
+
+   /// 返回值表示是否为内建函数
+   bool builtinfunc(CallExpr * callexpr) {
+	   mStack.back().setPC(callexpr); // PC有啥用？
 	   int val = 0;
 	   FunctionDecl * callee = callexpr->getDirectCallee();
 	   if (callee == mInput) {
@@ -226,13 +266,16 @@ public:
 		  scanf("%d", &val);
 
 		  mStack.back().bindStmt(callexpr, val);
+		  return true;
 	   } else if (callee == mOutput) {
 		   /// TODO: 测试输出字符串常量的情况，比如 PRINT("hello")
 		   Expr * decl = callexpr->getArg(0);
 		   val = mStack.back().getStmtVal(decl);
 		   llvm::errs() << val;
+		   return true;
 	   } else {
 		   /// You could add your code here for Function call Return
+		   return false;
 	   }
    }
 };

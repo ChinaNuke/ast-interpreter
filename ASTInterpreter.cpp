@@ -40,8 +40,32 @@ public:
 	   mEnv->cast(expr);
    }
    virtual void VisitCallExpr(CallExpr * call) {
-	   VisitStmt(call);
-	   mEnv->call(call);
+	   VisitStmt(call); // 主要作用是计算函数参数
+
+      // 内建函数不需要进行后续的处理
+	   if (mEnv->builtinfunc(call)) {
+         return;
+      }
+
+      // 创建新栈帧并进行参数绑定
+      mEnv->enterfunc(call);
+
+      // 遍历执行函数体
+      VisitStmt(call->getDirectCallee()->getBody());
+
+      // 弹出栈帧并进行返回值绑定
+      mEnv->exitfunc(call);
+   }
+   virtual void VisitReturnStmt(ReturnStmt * ret) {
+      // 计算返回值，但不在此处进行返回操作，因为有的函数可能不含有 ReturnStmt.
+
+      /// TODO: 考虑 main 函数返回的特殊情况:FunctionDecl isMain()
+      /// TODO: 考虑没有返回语句的情况
+
+      VisitStmt(ret);
+
+      // clang/AST/Stmt.h: class ReturnStmt
+      mEnv->retstmt(ret->getRetValue());
    }
    virtual void VisitDeclStmt(DeclStmt * declstmt) {
       VisitStmt(declstmt);
