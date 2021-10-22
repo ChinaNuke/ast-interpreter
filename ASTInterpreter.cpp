@@ -35,6 +35,13 @@ public:
 	   VisitStmt(expr);
 	   mEnv->declref(expr);
    }
+   virtual void VisitArraySubscriptExpr(ArraySubscriptExpr * arrayexpr) {
+      VisitStmt(arrayexpr);
+      mEnv->array(arrayexpr);
+   }
+   virtual void VisitParenExpr(ParenExpr * parenexpr) {
+      VisitStmt(parenexpr);
+   }
    virtual void VisitCastExpr(CastExpr * expr) {
 	   VisitStmt(expr);
 	   mEnv->cast(expr);
@@ -114,14 +121,18 @@ public:
       Expr * inc = forstmt->getInc();
       Stmt * body = forstmt->getBody();
 
-      Visit(init);
-      Visit(cond);
+      // init 和 cond 都可能为空，但不需要判断 body 是否为空，因为 body 为空时也是一个 
+      // NullStmt，可以被 Visit 。
+      if (init) { Visit(init); }
+      if (cond) { Visit(cond); }
 
       // 每次循环都要重新 evaluate 一下 condition 的值，以更新 StackFrame 中保存的结果
+      // TODO: 如果 cond 为空，那么这个 while 循环的条件应该怎么写？
+      //       while 循环体中的两个 if 判断能否优化？
       while (mEnv->getExprValue(cond)) {
          Visit(body);
-         Visit(inc);
-         Visit(cond);
+         if (inc) { Visit(inc); }
+         if (cond) { Visit(cond); }
       }
    }
 private:
