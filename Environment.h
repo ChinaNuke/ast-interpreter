@@ -361,7 +361,6 @@ public:
 
   /// 为 DeclRefExpr 复制一份对应 DeclStmt 的值，以便直接引用
   void declref(DeclRefExpr *declref) {
-    mStack.back().setPC(declref);
     QualType type = declref->getType();
     if (type->isIntegerType() || type->isArrayType() || type->isPointerType()) {
       Decl *decl = declref->getFoundDecl();
@@ -386,7 +385,6 @@ public:
   }
 
   void cast(CastExpr *castexpr) {
-    mStack.back().setPC(castexpr);
     QualType type = castexpr->getType();
 
     // 这里的 PointerType 包含了数组引用和函数调用的两种情况，
@@ -439,7 +437,6 @@ public:
 
   /// 返回值表示是否为内建函数
   bool builtinfunc(CallExpr *callexpr) {
-    mStack.back().setPC(callexpr); // PC有啥用？
     int64_t val = 0;
     FunctionDecl *callee = callexpr->getDirectCallee();
     if (callee == mInput) {
