@@ -13,3 +13,4 @@ int main() {
         b = a[2];
 	PRINT(b);
 }
+// 4
