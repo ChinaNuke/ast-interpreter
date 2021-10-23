@@ -34,6 +34,11 @@ public:
     mEnv->unaryop(uop);
   }
 
+  virtual void VisitUnaryExprOrTypeTraitExpr(UnaryExprOrTypeTraitExpr *expr) {
+    // sizeof
+    mEnv->ueot(expr);
+  }
+
   virtual void VisitDeclRefExpr(DeclRefExpr *expr) {
     VisitStmt(expr);
     mEnv->declref(expr);
@@ -44,7 +49,10 @@ public:
     mEnv->array(arrayexpr);
   }
 
-  virtual void VisitParenExpr(ParenExpr *parenexpr) { VisitStmt(parenexpr); }
+  virtual void VisitParenExpr(ParenExpr *parenexpr) {
+    VisitStmt(parenexpr);
+    mEnv->paren(parenexpr);
+  }
 
   virtual void VisitCastExpr(CastExpr *expr) {
     VisitStmt(expr);
@@ -85,15 +93,17 @@ public:
     VisitStmt(declstmt);
     mEnv->decl(declstmt);
   }
-  
+
   virtual void VisitIfStmt(IfStmt *ifstmt) {
     // clang/AST/Stmt.h: class IfStmt
 
     Expr *cond = ifstmt->getCond();
 
-    // 此处不能用 VisitStmt()，因为它只会取出参数的所有子节点进行遍历而忽略当前节点本身。
-    // 比如对于一个 BinaryOperator，使用 VisitStmt() 会跳过 VisitBinaryOperator() 
-    // 的执行语句的 body 部分也可能是一个简单的 BinaryOperator，所以也必须用 Visit()。
+    // 此处不能用
+    // VisitStmt()，因为它只会取出参数的所有子节点进行遍历而忽略当前节点本身。
+    // 比如对于一个 BinaryOperator，使用 VisitStmt() 会跳过
+    // VisitBinaryOperator() 的执行语句的 body 部分也可能是一个简单的
+    // BinaryOperator，所以也必须用 Visit()。
     // 详见：clang/AST/EvaluatedExprVisitor.h: void VisitStmt(PTR(Stmt) S)
     Visit(cond);
 
@@ -107,7 +117,7 @@ public:
       }
     }
   }
-  
+
   virtual void VisitWhileStmt(WhileStmt *whilestmt) {
     // clang/AST/Stmt.h: class WhileStmt
 
@@ -164,7 +174,7 @@ class InterpreterConsumer : public ASTConsumer {
 public:
   explicit InterpreterConsumer(const ASTContext &context)
       : mEnv(), mVisitor(context, &mEnv) {}
-      
+
   virtual ~InterpreterConsumer() {}
 
   virtual void HandleTranslationUnit(clang::ASTContext &Context) {

@@ -17,9 +17,13 @@ class StackFrame {
   /// Which are either integer or addresses (also represented using an Integer
   /// value)
 
-  // 区别：Decl 是不能被 Visit 遍历的，而 Stmt 是可以被遍历的
+  // 区别：Decl 是不能被 Visit 遍历的，而 Stmt 是可以被遍历的。
+  // 而对于指针类型（数组、指针），在大部分情况下我们是使用其地址所指向的值的，对于要使用
+  // 地址的情况，我们在获取时可以明确知道我们要用地址，所以在这里单独增加一个
+  // map 来存储 这类地址。
   std::map<Decl *, int64_t> mVars;
   std::map<Stmt *, int64_t> mExprs;
+  std::map<Stmt *, int64_t *> mPtrs;
   /// The current stmt
   Stmt *mPC;
   int64_t returnValue; // 保存当前栈帧的返回值，只考虑整数
@@ -27,28 +31,44 @@ public:
   StackFrame() : mVars(), mExprs(), mPC() {}
 
   void bindDecl(Decl *decl, int64_t val) { mVars[decl] = val; }
+
   bool hasDecl(Decl *decl) { return (mVars.find(decl) != mVars.end()); }
+
   int64_t getDeclVal(Decl *decl) {
     assert(mVars.find(decl) != mVars.end());
     return mVars.find(decl)->second;
   }
+
   void bindStmt(Stmt *stmt, int64_t val) { mExprs[stmt] = val; }
+
   bool hasStmt(Stmt *stmt) { return (mExprs.find(stmt) != mExprs.end()); }
+
   int64_t getStmtVal(Stmt *stmt) {
 #ifndef DEBUG
     assert(mExprs.find(stmt) != mExprs.end());
 #else
     if (mExprs.find(stmt) == mExprs.end()) {
-      llvm::errs() << "Can not find statement: \n";
+      llvm::errs() << "[DEBUG] Can not find statement: \n";
       stmt->dump();
       assert(false);
     }
 #endif
     return mExprs[stmt];
   }
+
+  void bindPtr(Stmt *stmt, int64_t *val) { mPtrs[stmt] = val; }
+
+  int64_t *getPtr(Stmt *stmt) {
+    assert(mPtrs.find(stmt) != mPtrs.end());
+    return mPtrs[stmt];
+  }
+
   void setPC(Stmt *stmt) { mPC = stmt; }
+
   Stmt *getPC() { return mPC; }
+
   void setReturnValue(int64_t value) { returnValue = value; }
+
   int64_t getReturnValue() { return returnValue; }
 };
 
@@ -130,8 +150,8 @@ public:
     int64_t *basePtr = (int64_t *)mStack.back().getStmtVal(base);
     int64_t indexVal = mStack.back().getStmtVal(index);
 
-    // 将 ArraySubscript 表达式的值保存到栈帧
-    mStack.back().bindStmt(arraysubscript, (int64_t)(basePtr + indexVal));
+    mStack.back().bindPtr(arraysubscript, basePtr + indexVal);
+    mStack.back().bindStmt(arraysubscript, *(basePtr + indexVal));
   }
 
   /// 把 IntegerLiteral 和 CharacterLiteral 这类常量也保存到栈帧
@@ -145,6 +165,26 @@ public:
     }
   }
 
+  void ueot(UnaryExprOrTypeTraitExpr *ueotexpr) {
+    // 比较草率的实现，后面可以再完善
+    UnaryExprOrTypeTrait kind = ueotexpr->getKind();
+    int64_t result = 0;
+    switch (kind) {
+    default:
+      llvm::errs() << "Unhandled UEOT.";
+      break;
+    case UETT_SizeOf:
+      result = 8; // int64_t 和 int64_t * 两种类型
+      break;
+    }
+    mStack.back().bindStmt(ueotexpr, result);
+  }
+
+  void paren(ParenExpr *parenexpr) {
+    mStack.back().bindStmt(parenexpr,
+                           mStack.back().getStmtVal(parenexpr->getSubExpr()));
+  }
+
   void binop(BinaryOperator *bop) {
 
     typedef BinaryOperatorKind Opcode;
@@ -155,13 +195,7 @@ public:
     // 赋值运算：=, *=, /=, %=, +=, -=, ...
     // 算数和逻辑运算：+, -, *, /, %, <<, >>, &, ^, |
 
-    int64_t leftValue = mStack.back().getStmtVal(left);
     int64_t rightValue = mStack.back().getStmtVal(right);
-
-    // 判断右值为 ArraySubscriptExpr 类型
-    if (isa<ArraySubscriptExpr>(right->IgnoreImpCasts())) {
-      rightValue = *(int64_t *)rightValue;
-    }
 
     if (bop->isAssignmentOp()) {
 
@@ -174,13 +208,21 @@ public:
         Decl *decl = declref->getFoundDecl();
         mStack.back().bindDecl(decl, rightValue);
       } else if (isa<ArraySubscriptExpr>(left)) {
-        int64_t *ptr = (int64_t *)mStack.back().getStmtVal(left);
+        int64_t *ptr = mStack.back().getPtr(left);
         *ptr = rightValue;
-      } else if (false) {
-        // UnaryOperator
-        // ...
+      } else if (UnaryOperator *uop = dyn_cast<UnaryOperator>(left)) {
+        // 暂时没想到什么优雅的写法合并到上面去
+        assert(uop->getOpcode() == UO_Deref);
+        int64_t *ptr = mStack.back().getPtr(left);
+        *ptr = rightValue;
+#ifndef DEBUG
       }
-
+#else
+      } else {
+        llvm::errs() << "Can not find assignment operation: \n";
+        bop->dump();
+      }
+#endif
       result = rightValue;
 
     } else {
@@ -191,18 +233,18 @@ public:
       // 中定义了转换规则（即在定义中添加对应的BO_、UO_ 等）
       Opcode opc = bop->getOpcode();
 
-      if (isa<ArraySubscriptExpr>(left)) {
-        leftValue = *(int64_t *)leftValue;
-      }
+      int64_t leftValue = mStack.back().getStmtVal(left);
 
       // *(a + 2)
-      /*
-      if (left->getType()->isPointerType() && right->getType()->isIntegerType())
-      { assert(opc == BO_Add || opc == BO_Sub) rightValue *= sizeof(int); } else
-      if (left->getType()->isIntegerType() && right->getType()->isPointerType())
-      { assert(opc == BO_Add || opc == BO_Sub) leftValue *= sizeof(int);
+      if (left->getType()->isPointerType() &&
+          right->getType()->isIntegerType()) {
+        assert(opc == BO_Add || opc == BO_Sub);
+        rightValue *= sizeof(int64_t);
+      } else if (left->getType()->isIntegerType() &&
+                 right->getType()->isPointerType()) {
+        assert(opc == BO_Add || opc == BO_Sub);
+        leftValue *= sizeof(int64_t);
       }
-      */
 
       switch (opc) {
       default:
@@ -253,29 +295,29 @@ public:
     // 自增自减：++, --（分前缀和后缀）
     // 地址操作：&, *
 
-    if (uop->isArithmeticOp()) {
-      Opcode opc = uop->getOpcode();
-      int64_t value = mStack.back().getStmtVal(uop->getSubExpr());
+    Opcode opc = uop->getOpcode();
+    int64_t value = mStack.back().getStmtVal(uop->getSubExpr());
 
-      switch (opc) {
-      default:
-        llvm::errs() << "Unhandled unary operator.";
-      case UO_Plus:
-        result = value;
-        break;
-      case UO_Minus:
-        result = -value;
-        break;
-      case UO_Not:
-        result = ~value;
-        break;
-      case UO_LNot:
-        result = !value;
-        break;
-      case UO_Deref:
-        result = *(int64_t *)value;
-        break;
-      }
+    switch (opc) {
+    default:
+      llvm::errs() << "Unhandled unary operator.";
+    case UO_Plus:
+      result = value;
+      break;
+    case UO_Minus:
+      result = -value;
+      break;
+    case UO_Not:
+      result = ~value;
+      break;
+    case UO_LNot:
+      result = !value;
+      break;
+    case UO_Deref:
+      // Deref 不是 ArithmeticOp !
+      mStack.back().bindPtr(uop, (int64_t *)value);
+      result = *(int64_t *)value;
+      break;
     }
 
     // 保存此一元表达式的值到栈帧
@@ -291,7 +333,8 @@ public:
         // 支持 int a = 10; 这样的简单声明和 int a[3]; 这样的数组声明
         QualType type = vardecl->getType();
 
-        if (type->isIntegerType()) {
+        if (type->isIntegerType() || type->isPointerType()) {
+          // int a; int a = 1; int *a; int *a = MALLOC(10); 四种情况
           if (vardecl->hasInit()) {
             mStack.back().bindDecl(
                 vardecl, mStack.back().getStmtVal(vardecl->getInit()));
@@ -325,7 +368,7 @@ public:
   void declref(DeclRefExpr *declref) {
     mStack.back().setPC(declref);
     QualType type = declref->getType();
-    if (type->isIntegerType() || type->isArrayType()) {
+    if (type->isIntegerType() || type->isArrayType() || type->isPointerType()) {
       Decl *decl = declref->getFoundDecl();
       int64_t val;
       // 优先从当前栈帧中查找，找不到再查找全局变量
@@ -339,8 +382,8 @@ public:
 #ifndef DEBUG
     }
 #else
-    } else {
-      llvm::errs() << "Unhandled declref type: \n";
+    } else if (!type->isFunctionProtoType()) {
+      llvm::errs() << "[DEBUG] Unhandled declref type: \n";
       declref->dump();
       type->dump();
     }
@@ -362,8 +405,8 @@ public:
 #ifndef DEBUG
     }
 #else
-    } else {
-      llvm::errs() << "Unhandled cast type: \n";
+    } else if (!type->isFunctionPointerType()) {
+      llvm::errs() << "[DEBUG] Unhandled cast type: \n";
       castexpr->dump();
       type->dump();
     }
@@ -373,9 +416,6 @@ public:
   /// 将返回值保存到栈帧
   void retstmt(Expr *retexpr) {
     int64_t retval = mStack.back().getStmtVal(retexpr);
-    if (isa<ArraySubscriptExpr>(retexpr->IgnoreImpCasts())) {
-      retval = *(int64_t *)retval;
-    }
     mStack.back().setReturnValue(retval);
   }
 
