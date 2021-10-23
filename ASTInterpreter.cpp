@@ -14,6 +14,8 @@ using namespace clang;
 
 #include "Environment.h"
 
+class ReturnException : public std::exception {};
+
 class InterpreterVisitor : public EvaluatedExprVisitor<InterpreterVisitor> {
 public:
   explicit InterpreterVisitor(const ASTContext &context, Environment *env)
@@ -71,7 +73,10 @@ public:
     mEnv->enterfunc(call);
 
     // 遍历执行函数体
-    VisitStmt(call->getDirectCallee()->getBody());
+    try {
+      VisitStmt(call->getDirectCallee()->getBody());
+    } catch (ReturnException e) {
+    }
 
     // 弹出栈帧并进行返回值绑定
     mEnv->exitfunc(call);
@@ -87,6 +92,7 @@ public:
 
     // clang/AST/Stmt.h: class ReturnStmt
     mEnv->retstmt(ret->getRetValue());
+    throw ReturnException();
   }
 
   virtual void VisitDeclStmt(DeclStmt *declstmt) {
@@ -195,7 +201,11 @@ public:
     mEnv.init(decl);
 
     FunctionDecl *entry = mEnv.getEntry();
-    mVisitor.VisitStmt(entry->getBody());
+
+    try {
+      mVisitor.VisitStmt(entry->getBody());
+    } catch (ReturnException e) {
+    }
   }
 
 private:
