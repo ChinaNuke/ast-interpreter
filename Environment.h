@@ -25,10 +25,9 @@ class StackFrame {
   std::map<Stmt *, int64_t> mExprs;
   std::map<Stmt *, int64_t *> mPtrs;
   /// The current stmt
-  Stmt *mPC;
   int64_t returnValue; // 保存当前栈帧的返回值，只考虑整数
 public:
-  StackFrame() : mVars(), mExprs(), mPC() {}
+  StackFrame() : mVars(), mExprs() {}
 
   void bindDecl(Decl *decl, int64_t val) { mVars[decl] = val; }
 
@@ -62,10 +61,6 @@ public:
     assert(mPtrs.find(stmt) != mPtrs.end());
     return mPtrs[stmt];
   }
-
-  void setPC(Stmt *stmt) { mPC = stmt; }
-
-  Stmt *getPC() { return mPC; }
 
   void setReturnValue(int64_t value) { returnValue = value; }
 
