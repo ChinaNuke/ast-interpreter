@@ -1,6 +1,6 @@
 # 国科大编译作业：基于 Clang 的 C 语言解释执行器
 
-恭喜又一个入坑国科大编译课程的可怜娃！完成本次大作业大约需要 1 到 2 周的时间，请提前做好规划。在实现过程中，你可以把给定的 25 个测试用例按照从简到难的顺序进行一个分组和排序，一次实现一块功能，一下子通过一组测试用例。不建议你直接把我这个作为你的作业原样交上去，你可以参照我的代码，按照自己的想法去实现一遍，还有一些我没有实现或者实现比较草率的地方，你可以去完善一下。如果这个仓库有帮助到你，欢迎点亮上面的 Star ！祝你在这个大作业中有所收获！
+恭喜又一个入坑国科大编译课程的可怜娃！完成本次大作业大约需要 1 到 2 周的时间，请提前做好规划。这次作业的内容大致是去分析 Clang 生成的抽象语法树（AST），根据语法树结点的语义执行相应的操作，实现解释执行。在实现过程中，你可以把给定的 25 个测试用例按照从简到难的顺序进行一个分组和排序，一次实现一块功能，一下子通过一组测试用例。不建议你直接把我这个作为你的作业原样交上去，你可以参照我的代码，按照自己的想法去实现一遍，还有一些我没有实现或者实现比较草率的地方，你可以去完善一下。本项目使用增量开发方式，你可以通过查看 Commit 记录来了解我的实现过程，可能会比你直接看最终完成的源代码要轻松一些。如果这个仓库有帮助到你，欢迎点亮上面的 Star ！祝你在这个大作业中有所收获！
 
 ## 下载本仓库
 
@@ -14,7 +14,7 @@ $ git clone https://github.com/ChinaNuke/ast-interpreter.git
 
 ```shell
 $ docker pull lczxxx123/llvm_10_hw:0.2
-$ docker run -td --name llvm_experiment -v "$PWD/ast-interpreter":/root/ lczxxx123/llvm_10_hw:0.2
+$ docker run -td --name llvm_experiment -v "$PWD/ast-interpreter":/root/ast-interpreter lczxxx123/llvm_10_hw:0.2
 $ docker exec -it llvm_experiment bash
 ```
 
@@ -22,7 +22,7 @@ $ docker exec -it llvm_experiment bash
 
 ## 编译
 
-从这一小节开始的所有命令都是在 docker 容器中执行的。创建一个名为 `build` 的目录并进入，使用 `-DLLVM_DIR` 指定 LLVM 的安装路径，`-DCMAKE_BUILD_TYPE=Debug` 参数指明编译时包含符号信息以方便调试。以后的每次编译只需要执行 `make` 就可以了，除非你修改了 Cmakefiles.txt 。
+从这一小节开始的所有命令都是在 docker 容器中执行的。创建一个名为 `build` 的目录并进入，使用 `-DLLVM_DIR` 指定 LLVM 的安装路径，`-DCMAKE_BUILD_TYPE=Debug` 参数指明编译时包含符号信息以方便调试。以后的每次编译只需要执行 `make` 就可以了，除非你修改了 CMakeLists.txt 。
 
 ```shell
 $ mkdir build && cd $_
